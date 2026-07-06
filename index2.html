@@ -1,0 +1,1689 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AWS EC2 시스템 상태 및 httpd 모니터링 데모 대시보드">
+  <title>EC2 Web Server Monitor Dashboard</title>
+  <!-- SEO 및 아이콘 설정 -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%2306b6d4%22/><path d=%22M30 45 L50 25 L70 45 L55 45 L55 75 L45 75 L45 45 Z%22 fill=%22%23fff%22/></svg>">
+  
+  <!-- CSS Stylesheet -->
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Brand Colors */
+  --bg-primary: #f4f7fb;
+  --bg-secondary: rgba(15, 23, 42, 0.55);
+  --bg-card: rgba(255,255,255,0.9);
+  --bg-sidebar: #1e40af;
+  --border-color: rgba(255, 255, 255, 0.07);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  
+  /* Text Colors */
+  --text-main: #1e293b;
+  --text-muted: #94a3b8;
+  --text-dark: #64748b;
+
+  /* Accent Colors */
+  --accent-cyan: #06b6d4;
+  --accent-purple: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-rose: #f43f5e;
+  --accent-amber: #f59e0b;
+  --accent-blue: #3b82f6;
+
+  /* Shadow & Glass Effects */
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.07);
+  --backdrop-blur: blur(12px);
+
+  /* Fonts */
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s ease;
+}
+
+/* Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-primary);
+  background-image:
+    linear-gradient(135deg,#dbeafe,#f0fdf4), 
+    radial-gradient(at 10% 10%, rgba(139, 92, 246, 0.08) 0px, transparent 50%),
+    radial-gradient(at 90% 80%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+  background-attachment: fixed;
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  overflow-x: hidden;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Sidebar Styling */
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-sidebar);
+  border-right: var(--glass-border);
+  backdrop-filter: var(--backdrop-blur);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 100;
+  transition: var(--transition-normal);
+}
+
+.sidebar-logo {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: var(--glass-border);
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
+}
+
+.logo-icon svg {
+  fill: #fff;
+  width: 18px;
+  height: 18px;
+}
+
+.logo-text {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.5px;
+  background: linear-gradient(to right, #ffffff, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sidebar-menu {
+  list-style: none;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.menu-item a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: var(--transition-fast);
+}
+
+.menu-item a svg {
+  width: 18px;
+  height: 18px;
+  transition: var(--transition-fast);
+}
+
+.menu-item a:hover, .menu-item.active a {
+  color: var(--text-main);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.menu-item.active a {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.15), rgba(139, 92, 246, 0.05));
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.menu-item.active a svg {
+  color: var(--accent-cyan);
+}
+
+.sidebar-footer {
+  padding: 20px;
+  border-top: var(--glass-border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.user-role {
+  font-size: 0.75rem;
+  color: var(--text-dark);
+}
+
+/* Main Content Area */
+.main-content {
+  margin-left: 260px;
+  flex: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition-normal);
+}
+
+/* Header Styling */
+.header {
+  height: 80px;
+  border-bottom: var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  background-color: rgba(8, 12, 20, 0.35);
+  backdrop-filter: var(--backdrop-blur);
+  position: sticky;
+  top: 0;
+  z-index: 90;
+}
+
+.header-title-area h1 {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.header-title-area p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: var(--accent-emerald);
+  padding: 6px 12px;
+  border-radius: 30px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--accent-emerald);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--accent-emerald);
+  animation: pulse 2s infinite;
+}
+
+.header-action-btn {
+  background: none;
+  border: var(--glass-border);
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.header-action-btn:hover {
+  color: var(--text-main);
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-hover);
+}
+
+/* Page Body Styling */
+.page-body {
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Metric Cards Grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: var(--glass-border);
+  border-radius: 16px;
+  padding: 24px;
+  backdrop-filter: var(--backdrop-blur);
+  box-shadow: var(--glass-shadow);
+  transition: var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: var(--glass-border);
+}
+
+.card-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.card-value {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.card-trend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.trend-up {
+  color: var(--accent-rose);
+}
+
+.trend-down {
+  color: var(--accent-emerald);
+}
+
+/* Charts and Controls Section */
+.row-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .row-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-card {
+  min-height: 380px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.chart-title-main {
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.chart-container {
+  position: relative;
+  height: 280px;
+  width: 100%;
+}
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control-btn {
+  width: 100%;
+  padding: 14px;
+  border: var(--glass-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: var(--transition-fast);
+}
+
+.control-btn svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--transition-fast);
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--border-hover);
+}
+
+.control-btn:hover svg {
+  transform: rotate(15deg);
+}
+
+.control-btn.active {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+  border: none;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.control-btn.active:hover {
+  filter: brightness(1.1);
+}
+
+/* Table Area */
+.table-card {
+  overflow: hidden;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.dashboard-table th {
+  padding: 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.05);
+}
+
+.dashboard-table td {
+  padding: 16px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.dashboard-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dashboard-table tbody tr {
+  transition: var(--transition-fast);
+}
+
+.dashboard-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 30px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-info {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--accent-blue);
+}
+
+.badge-warning {
+  background-color: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+}
+
+.badge-error {
+  background-color: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  color: var(--accent-rose);
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.badge-info .badge-dot { background-color: var(--accent-blue); }
+.badge-warning .badge-dot { background-color: var(--accent-amber); }
+.badge-error .badge-dot { background-color: var(--accent-rose); }
+
+/* Toast Notifications */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 1000;
+}
+
+.toast {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(15px);
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 280px;
+  max-width: 400px;
+  transform: translateY(50px);
+  opacity: 0;
+  animation: slideIn 0.3s forwards cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast.removing {
+  animation: slideOut 0.3s forwards ease;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-icon.info { color: var(--accent-blue); }
+.toast-icon.success { color: var(--accent-emerald); }
+.toast-icon.warning { color: var(--accent-amber); }
+
+/* Animations */
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.7;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes slideIn {
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  to {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
+/* Responsive Scaling */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  .main-content {
+    margin-left: 0;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .header {
+    padding: 0 20px;
+  }
+  .page-body {
+    padding: 20px;
+  }
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tab Section & Navigation Styling */
+.tab-section {
+  display: none;
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.tab-section.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* EC2 Instances Tab Styling */
+.instances-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.instance-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.instance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: var(--glass-border);
+  padding-bottom: 12px;
+}
+
+.instance-name {
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.instance-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-item {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.detail-item strong {
+  color: var(--text-dark);
+}
+
+.instance-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: auto;
+}
+
+/* Specific Instance Status Colors */
+.status-badge.status-stopped {
+  background-color: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  color: var(--accent-rose);
+}
+
+.status-badge.status-stopped .status-dot {
+  background-color: var(--accent-rose);
+  box-shadow: 0 0 10px var(--accent-rose);
+  animation: none;
+}
+
+.status-badge.status-stopping {
+  background-color: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+}
+
+.status-badge.status-stopping .status-dot {
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 10px var(--accent-amber);
+}
+
+.status-badge.status-pending {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--accent-blue);
+}
+
+.status-badge.status-pending .status-dot {
+  background-color: var(--accent-blue);
+  box-shadow: 0 0 10px var(--accent-blue);
+}
+
+
+</style>
+<!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/>
+        </svg>
+      </div>
+      <span class="logo-text">AWS EC2 Portal v2</span>
+    </div>
+    
+    <ul class="sidebar-menu">
+      <li class="menu-item active">
+        <a href="#" id="menu-overview">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z"></path>
+          </svg>
+          Overview
+        </a>
+      </li>
+      <li class="menu-item">
+        <a href="#" id="menu-instances">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 012-2h10a2 2 0 012 2m-14 0a2 2 0 002 2h10a2 2 0 002-2M7 8h10M7 16h10"></path>
+          </svg>
+          EC2 Instances
+        </a>
+      </li>
+      <li class="menu-item">
+        <a href="#" id="menu-logs">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+          Server Logs
+        </a>
+      </li>
+      <li class="menu-item">
+        <a href="#" id="menu-settings">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+          Settings
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar">EC</div>
+      <div class="user-info">
+        <span class="user-name">EC2 User Admin</span>
+        <span class="user-role">i-0a2b3c4d5e6f7g8h9</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Wrapper -->
+  <main class="main-content">
+    
+    <!-- Top Header -->
+    <header class="header">
+      <div class="header-title-area">
+        <h1>httpd Web Server Dashboard</h1>
+        <p>AWS EC2 인스턴스 데모 제어 및 모니터링 콘솔</p>
+      </div>
+      
+      <div class="header-controls">
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span>System Healthy</span>
+        </div>
+        
+        <button class="header-action-btn" id="btn-notifications" aria-label="Notifications">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Page Body -->
+    <section class="page-body">
+      
+      <!-- Tab 1: Overview -->
+      <div id="section-overview" class="tab-section active">
+        <!-- Metrics Row -->
+        <div class="metrics-grid">
+          <!-- Metric 1: CPU Usage -->
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">CPU Utilization</span>
+              <div class="card-icon" style="color: var(--accent-cyan);">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                </svg>
+              </div>
+            </div>
+            <div class="card-value" id="val-cpu">24.5%</div>
+            <div class="card-trend trend-down">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 13l-7 7-7-7m14-6l-7 7-7-7"></path>
+              </svg>
+              <span>1.2% 대비 하락</span>
+            </div>
+          </article>
+
+          <!-- Metric 2: Memory Usage -->
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Memory Allocation</span>
+              <div class="card-icon" style="color: var(--accent-purple);">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                </svg>
+              </div>
+            </div>
+            <div class="card-value" id="val-mem">61.2%</div>
+            <div class="card-trend trend-up">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 11l7-7 7 7M5 19l7-7 7 7"></path>
+              </svg>
+              <span>0.4% 대비 상승</span>
+            </div>
+          </article>
+
+          <!-- Metric 3: Network Transfer -->
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Network Outbound</span>
+              <div class="card-icon" style="color: var(--accent-blue);">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                </svg>
+              </div>
+            </div>
+            <div class="card-value" id="val-net">14.2 MB/s</div>
+            <div class="card-trend trend-up">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 11l7-7 7 7M5 19l7-7 7 7"></path>
+              </svg>
+              <span>3.5 MB/s 대비 상승</span>
+            </div>
+          </article>
+
+          <!-- Metric 4: Active Services -->
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Active Connections</span>
+              <div class="card-icon" style="color: var(--accent-emerald);">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+              </div>
+            </div>
+            <div class="card-value" id="val-conn">158</div>
+            <div class="card-trend trend-down">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 13l-7 7-7-7m14-6l-7 7-7-7"></path>
+              </svg>
+              <span>12 연결 대비 감소</span>
+            </div>
+          </article>
+        </div>
+
+        <!-- Charts & Controls Row -->
+        <div class="row-layout" style="margin-top: 32px;">
+          <!-- Live charts -->
+          <div class="card chart-card">
+            <div class="chart-header">
+              <h2 class="chart-title-main">EC2 Instance Telemetry (Real-time)</h2>
+              <div class="status-badge" style="background-color: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">
+                <span>Live Sync (3s)</span>
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="telemetryChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Quick Controls -->
+          <div class="card">
+            <h2 class="chart-title-main" style="margin-bottom: 24px;">EC2 Quick Actions</h2>
+            <div class="control-panel">
+              <button class="control-btn" id="btn-restart">
+                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3m-3-3v12"></path>
+                </svg>
+                Restart httpd Service
+              </button>
+              <button class="control-btn" id="btn-cache">
+                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Clear System Cache
+              </button>
+              <button class="control-btn" id="btn-report">
+                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Generate Diagnostics Report
+              </button>
+              <button class="control-btn active" id="btn-spike">
+                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                Simulate Traffic Spike
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="card table-card" style="margin-top: 32px;">
+          <div class="chart-header">
+            <h2 class="chart-title-main">System Event & Apache Logs</h2>
+            <span style="font-size: 0.8rem; color: var(--text-muted);" id="logs-count">Showing last 5 events</span>
+          </div>
+          <div class="table-wrapper">
+            <table class="dashboard-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Level</th>
+                  <th>Service</th>
+                  <th>Message</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="logs-tbody">
+                <!-- Dynamically populated via app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: EC2 Instances -->
+      <div id="section-instances" class="tab-section">
+        <div class="instances-grid">
+          <!-- Instance 1 -->
+          <div class="card instance-card" id="inst-web-1">
+            <div class="instance-header">
+              <span class="instance-name">web-server-01</span>
+              <span class="status-badge status-running">
+                <span class="status-dot"></span>
+                <span class="status-text">Running</span>
+              </span>
+            </div>
+            <div class="instance-details">
+              <div class="detail-item"><strong>ID:</strong> i-0a2b3c4d5e6f7g8h9</div>
+              <div class="detail-item"><strong>Type:</strong> t3.medium</div>
+              <div class="detail-item"><strong>IP:</strong> 54.180.12.89</div>
+              <div class="detail-item"><strong>Uptime:</strong> 12d 4h 15m</div>
+            </div>
+            <div class="instance-actions">
+              <button class="control-btn btn-stop-inst" data-id="1">Stop Instance</button>
+              <button class="control-btn active btn-start-inst" data-id="1" style="display: none;">Start Instance</button>
+            </div>
+          </div>
+          <!-- Instance 2 -->
+          <div class="card instance-card" id="inst-web-2">
+            <div class="instance-header">
+              <span class="instance-name">web-server-02</span>
+              <span class="status-badge status-running">
+                <span class="status-dot"></span>
+                <span class="status-text">Running</span>
+              </span>
+            </div>
+            <div class="instance-details">
+              <div class="detail-item"><strong>ID:</strong> i-0b8c9d0e1f2a3b4c5</div>
+              <div class="detail-item"><strong>Type:</strong> t3.medium</div>
+              <div class="detail-item"><strong>IP:</strong> 54.180.12.90</div>
+              <div class="detail-item"><strong>Uptime:</strong> 12d 4h 12m</div>
+            </div>
+            <div class="instance-actions">
+              <button class="control-btn btn-stop-inst" data-id="2">Stop Instance</button>
+              <button class="control-btn active btn-start-inst" data-id="2" style="display: none;">Start Instance</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Server Logs -->
+      <div id="section-logs" class="tab-section">
+        <div class="card table-card">
+          <div class="chart-header">
+            <h2 class="chart-title-main">System Event & Apache Logs Viewer</h2>
+            <div class="log-filters" style="display: flex; gap: 12px;">
+              <input type="text" id="log-search" placeholder="Search message..." class="control-btn" style="width: 200px; text-align: left; padding: 8px 12px; font-weight: normal;">
+              <select id="log-level-filter" class="control-btn" style="width: 130px; text-align: left; padding: 8px 12px; font-weight: normal; appearance: auto;">
+                <option value="ALL">All Levels</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="dashboard-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Level</th>
+                  <th>Service</th>
+                  <th>Message</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="full-logs-tbody">
+                <!-- Dynamically populated via app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Settings -->
+      <div id="section-settings" class="tab-section">
+        <div class="card settings-card" style="max-width: 600px; margin: 0 auto;">
+          <h2 class="chart-title-main" style="margin-bottom: 24px;">Dashboard & Threshold Settings</h2>
+          <form id="settings-form" class="settings-form" style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+              <label for="input-interval" style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">Metrics Sync Interval</label>
+              <select id="input-interval" class="control-btn" style="text-align: left; padding: 12px; appearance: auto;">
+                <option value="3000">3 Seconds (Fast)</option>
+                <option value="5000">5 Seconds (Normal)</option>
+                <option value="10000">10 Seconds (Slow)</option>
+              </select>
+            </div>
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+              <label for="input-cpu-threshold" style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">CPU Warning Threshold (%)</label>
+              <input type="number" id="input-cpu-threshold" class="control-btn" min="1" max="100" value="80" style="text-align: left; padding: 12px;">
+            </div>
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+              <label for="input-mem-threshold" style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">Memory Warning Threshold (%)</label>
+              <input type="number" id="input-mem-threshold" class="control-btn" min="1" max="100" value="85" style="text-align: left; padding: 12px;">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+              <input type="checkbox" id="input-toast-notif" checked style="width: 18px; height: 18px; accent-color: var(--accent-cyan); cursor: pointer;">
+              <label for="input-toast-notif" style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted); cursor: pointer; user-select: none;">Enable In-App Toast Notifications</label>
+            </div>
+            <button type="submit" class="control-btn active" style="margin-top: 12px;">Save Settings</button>
+          </form>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Toast Container for feedback alerts -->
+  <div id="toast-container"></div>
+
+  <!-- JavaScript file -->
+  <script>
+// DOM Elements
+const cpuValEl = document.getElementById('val-cpu');
+const memValEl = document.getElementById('val-mem');
+const netValEl = document.getElementById('val-net');
+const connValEl = document.getElementById('val-conn');
+const toastContainer = document.getElementById('toast-container');
+const logsTbody = document.getElementById('logs-tbody');
+
+// Sidebar & Navigation
+const menuOverview = document.getElementById('menu-overview');
+const menuInstances = document.getElementById('menu-instances');
+const menuLogs = document.getElementById('menu-logs');
+const menuSettings = document.getElementById('menu-settings');
+
+const sectionOverview = document.getElementById('section-overview');
+const sectionInstances = document.getElementById('section-instances');
+const sectionLogs = document.getElementById('section-logs');
+const sectionSettings = document.getElementById('section-settings');
+
+// Full Logs elements
+const fullLogsTbody = document.getElementById('full-logs-tbody');
+const logSearchInput = document.getElementById('log-search');
+const logLevelFilter = document.getElementById('log-level-filter');
+
+// Settings Form
+const settingsForm = document.getElementById('settings-form');
+const inputInterval = document.getElementById('input-interval');
+const inputCpuThreshold = document.getElementById('input-cpu-threshold');
+const inputMemThreshold = document.getElementById('input-mem-threshold');
+const inputToastNotif = document.getElementById('input-toast-notif');
+
+// Buttons
+const btnRestart = document.getElementById('btn-restart');
+const btnCache = document.getElementById('btn-cache');
+const btnReport = document.getElementById('btn-report');
+const btnSpike = document.getElementById('btn-spike');
+const btnNotifications = document.getElementById('btn-notifications');
+
+// State Variables
+let currentCpu = 24.5;
+let currentMem = 61.2;
+let currentNet = 14.2;
+let currentConn = 158;
+let isSpikeActive = false;
+let spikeDuration = 0;
+
+// Settings & Threshold State
+let syncIntervalTime = 3000;
+let cpuThreshold = 80;
+let memThreshold = 85;
+let enableToasts = true;
+let metricsIntervalId = null;
+
+// All Log Data Store for filtering
+const allLogs = [];
+
+// Navigation logic
+const navItems = [
+  { menu: menuOverview, section: sectionOverview },
+  { menu: menuInstances, section: sectionInstances },
+  { menu: menuLogs, section: sectionLogs },
+  { menu: menuSettings, section: sectionSettings }
+];
+
+navItems.forEach(item => {
+  if (item.menu) {
+    item.menu.addEventListener('click', (e) => {
+      e.preventDefault();
+      
+      // Update active menu items
+      navItems.forEach(x => {
+        x.menu.parentElement.classList.remove('active');
+        x.section.classList.remove('active');
+      });
+      
+      item.menu.parentElement.classList.add('active');
+      item.section.classList.add('active');
+    });
+  }
+});
+
+// Chart.js Configuration
+const ctx = document.getElementById('telemetryChart').getContext('2d');
+
+// Gradient for Chart
+const cyanGradient = ctx.createLinearGradient(0, 0, 0, 250);
+cyanGradient.addColorStop(0, 'rgba(6, 182, 212, 0.4)');
+cyanGradient.addColorStop(1, 'rgba(6, 182, 212, 0.01)');
+
+const purpleGradient = ctx.createLinearGradient(0, 0, 0, 250);
+purpleGradient.addColorStop(0, 'rgba(139, 92, 246, 0.4)');
+purpleGradient.addColorStop(1, 'rgba(139, 92, 246, 0.01)');
+
+const timeLabels = [];
+const cpuData = [];
+const memData = [];
+
+// Initialize starting chart data (last 10 ticks)
+const now = new Date();
+for (let i = 9; i >= 0; i--) {
+  const timeStr = new Date(now.getTime() - i * 3000).toLocaleTimeString('ko-KR', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  timeLabels.push(timeStr);
+  cpuData.push(parseFloat((20 + Math.random() * 10).toFixed(1)));
+  memData.push(parseFloat((58 + Math.random() * 4).toFixed(1)));
+}
+
+const telemetryChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: timeLabels,
+    datasets: [
+      {
+        label: 'CPU Load (%)',
+        data: cpuData,
+        borderColor: '#06b6d4',
+        borderWidth: 2.5,
+        backgroundColor: cyanGradient,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#06b6d4',
+        pointHoverRadius: 6,
+        pointRadius: 2
+      },
+      {
+        label: 'Memory Allocation (%)',
+        data: memData,
+        borderColor: '#8b5cf6',
+        borderWidth: 2.5,
+        backgroundColor: purpleGradient,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#8b5cf6',
+        pointHoverRadius: 6,
+        pointRadius: 2
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          color: '#94a3b8',
+          font: {
+            family: 'Inter',
+            size: 11
+          },
+          boxWidth: 12,
+          usePointStyle: true,
+          pointStyle: 'circle'
+        }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        titleFont: { family: 'Outfit', size: 13 },
+        bodyFont: { family: 'Inter', size: 12 },
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 8,
+        displayColors: true
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          color: 'rgba(255, 255, 255, 0.03)'
+        },
+        ticks: {
+          color: '#64748b',
+          font: {
+            family: 'Inter',
+            size: 10
+          }
+        }
+      },
+      y: {
+        min: 0,
+        max: 100,
+        grid: {
+          color: 'rgba(255, 255, 255, 0.03)'
+        },
+        ticks: {
+          color: '#64748b',
+          font: {
+            family: 'Inter',
+            size: 10
+          },
+          callback: function(value) {
+            return value + '%';
+          }
+        }
+      }
+    }
+  }
+});
+
+// Toast Message System
+function showToast(message, type = 'info') {
+  if (!enableToasts) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  
+  let iconSvg = '';
+  if (type === 'success') {
+    iconSvg = `
+      <svg class="toast-icon success" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>`;
+  } else if (type === 'warning') {
+    iconSvg = `
+      <svg class="toast-icon warning" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+      </svg>`;
+  } else {
+    iconSvg = `
+      <svg class="toast-icon info" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>`;
+  }
+
+  toast.innerHTML = `
+    <div class="toast-icon">${iconSvg}</div>
+    <div class="toast-message">${message}</div>
+  `;
+
+  toastContainer.appendChild(toast);
+
+  // Auto remove toast
+  setTimeout(() => {
+    toast.classList.add('removing');
+    toast.addEventListener('animationend', () => {
+      toast.remove();
+    });
+  }, 4000);
+}
+
+// Log System
+function addLog(level, service, message) {
+  const timestamp = new Date().toLocaleTimeString('ko-KR', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  const logEntry = { timestamp, level, service, message };
+  allLogs.unshift(logEntry);
+  if (allLogs.length > 50) allLogs.pop(); // Keep last 50
+
+  renderLogs();
+}
+
+function renderLogs() {
+  // Overview Logs (max 7)
+  logsTbody.innerHTML = '';
+  const overviewItems = allLogs.slice(0, 7);
+  overviewItems.forEach(log => {
+    logsTbody.appendChild(createLogRow(log));
+  });
+
+  // Full Logs (with filtering)
+  fullLogsTbody.innerHTML = '';
+  const searchVal = logSearchInput.value.toLowerCase();
+  const filterVal = logLevelFilter.value;
+
+  const filtered = allLogs.filter(log => {
+    const matchesSearch = log.message.toLowerCase().includes(searchVal) || log.service.toLowerCase().includes(searchVal);
+    const matchesLevel = filterVal === 'ALL' || log.level === filterVal;
+    return matchesSearch && matchesLevel;
+  });
+
+  filtered.forEach(log => {
+    fullLogsTbody.appendChild(createLogRow(log));
+  });
+}
+
+function createLogRow(log) {
+  let badgeClass = 'badge-info';
+  if (log.level === 'WARNING') badgeClass = 'badge-warning';
+  if (log.level === 'ERROR') badgeClass = 'badge-error';
+
+  const newRow = document.createElement('tr');
+  newRow.innerHTML = `
+    <td style="color: var(--text-dark);">${log.timestamp}</td>
+    <td>
+      <span class="badge ${badgeClass}">
+        <span class="badge-dot"></span>${log.level}
+      </span>
+    </td>
+    <td style="font-weight: 500;">${log.service}</td>
+    <td style="color: var(--text-muted);">${log.message}</td>
+    <td style="color: var(--accent-emerald);">Success</td>
+  `;
+  return newRow;
+}
+
+// Initial Logs
+const initLogs = [
+  { level: 'INFO', service: 'httpd', message: 'Apache Server started on port 80 successfully.' },
+  { level: 'INFO', service: 'systemd', message: 'Loaded service profile for AWS CloudWatch agent.' },
+  { level: 'WARNING', service: 'dhclient', message: 'DHCP lease renewed for interface eth0.' },
+  { level: 'INFO', service: 'sshd', message: 'Accepted publickey for ec2-user from 192.168.1.100 port 52310.' },
+  { level: 'INFO', service: 'systemd', message: 'Startup finished in 1.45s (kernel) + 4.23s (userspace).' }
+];
+
+initLogs.reverse().forEach(log => {
+  addLog(log.level, log.service, log.message);
+});
+
+// Logs Filters Listeners
+logSearchInput.addEventListener('input', renderLogs);
+logLevelFilter.addEventListener('change', renderLogs);
+
+// Metrics Loop Setup
+function startMetricsLoop() {
+  if (metricsIntervalId) {
+    clearInterval(metricsIntervalId);
+  }
+
+  metricsIntervalId = setInterval(() => {
+    let cpuDelta = (Math.random() - 0.5) * 5;
+    let memDelta = (Math.random() - 0.5) * 1.5;
+    let netDelta = (Math.random() - 0.4) * 3;
+    let connDelta = Math.floor((Math.random() - 0.5) * 10);
+
+    // If traffic spike simulation is active
+    if (isSpikeActive) {
+      spikeDuration++;
+      if (spikeDuration < 5) {
+        // Rapid increase
+        cpuDelta = 8 + Math.random() * 5;
+        memDelta = 2 + Math.random() * 2;
+        netDelta = 15 + Math.random() * 10;
+        connDelta = 80 + Math.floor(Math.random() * 40);
+      } else if (spikeDuration >= 5 && spikeDuration < 10) {
+        // Hover at high levels
+        currentCpu = 85 + (Math.random() - 0.5) * 3;
+        currentMem = 82 + (Math.random() - 0.5) * 1;
+        currentNet = 92 + (Math.random() - 0.5) * 5;
+        currentConn = 750 + Math.floor((Math.random() - 0.5) * 30);
+        cpuDelta = 0;
+        memDelta = 0;
+        netDelta = 0;
+        connDelta = 0;
+      } else {
+        // Cool down
+        isSpikeActive = false;
+        spikeDuration = 0;
+        addLog('INFO', 'httpd', 'Traffic spike subsided. Auto-scaling scale-in check initiated.');
+        showToast('Traffic spike simulation completed. Resources cooling down.', 'info');
+      }
+    }
+
+    // Update logic with boundaries
+    currentCpu = Math.max(5, Math.min(98, currentCpu + cpuDelta));
+    currentMem = Math.max(10, Math.min(95, currentMem + memDelta));
+    currentNet = Math.max(0.1, Math.min(150, currentNet + netDelta));
+    currentConn = Math.max(10, Math.min(1000, currentConn + connDelta));
+
+    // Render values
+    cpuValEl.textContent = `${currentCpu.toFixed(1)}%`;
+    memValEl.textContent = `${currentMem.toFixed(1)}%`;
+    netValEl.textContent = `${currentNet.toFixed(1)} MB/s`;
+    connValEl.textContent = currentConn;
+
+    // Threshold Check and Warning Trigger
+    if (currentCpu > cpuThreshold) {
+      addLog('WARNING', 'kernel', `High CPU usage detected: ${currentCpu.toFixed(1)}% (Threshold: ${cpuThreshold}%)`);
+    }
+    if (currentMem > memThreshold) {
+      addLog('WARNING', 'kernel', `High Memory allocation detected: ${currentMem.toFixed(1)}% (Threshold: ${memThreshold}%)`);
+    }
+
+    // Add data point to Chart
+    const timeStr = new Date().toLocaleTimeString('ko-KR', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    telemetryChart.data.labels.push(timeStr);
+    telemetryChart.data.datasets[0].data.push(parseFloat(currentCpu.toFixed(1)));
+    telemetryChart.data.datasets[1].data.push(parseFloat(currentMem.toFixed(1)));
+
+    // Keep last 10 points
+    if (telemetryChart.data.labels.length > 10) {
+      telemetryChart.data.labels.shift();
+      telemetryChart.data.datasets[0].data.shift();
+      telemetryChart.data.datasets[1].data.shift();
+    }
+
+    telemetryChart.update('none'); // Update without full animation
+  }, syncIntervalTime);
+}
+
+// Start Metrics Loop Initial
+startMetricsLoop();
+
+// Buttons Actions Handlers
+btnRestart.addEventListener('click', () => {
+  showToast('Apache HTTP Server (httpd) 서비스 재시작 명령을 전송했습니다...', 'info');
+  btnRestart.disabled = true;
+  
+  setTimeout(() => {
+    currentCpu = 2.4;
+    currentConn = 5;
+    currentNet = 0.2;
+    
+    cpuValEl.textContent = `${currentCpu.toFixed(1)}%`;
+    connValEl.textContent = currentConn;
+    netValEl.textContent = `${currentNet.toFixed(1)} MB/s`;
+
+    addLog('INFO', 'httpd', 'Gracefully stopped Apache/2.4.52.');
+    addLog('INFO', 'httpd', 'Started httpd service. Listening on port 80.');
+    showToast('httpd 서비스가 정상적으로 재시작되었습니다.', 'success');
+    btnRestart.disabled = false;
+  }, 1500);
+});
+
+btnCache.addEventListener('click', () => {
+  showToast('시스템 캐시 및 메모리 버퍼를 정리하는 중...', 'info');
+  btnCache.disabled = true;
+
+  setTimeout(() => {
+    const originalMem = currentMem;
+    currentMem = Math.max(30, currentMem - 18.4);
+    memValEl.textContent = `${currentMem.toFixed(1)}%`;
+
+    addLog('INFO', 'kernel', `Cleared slab cache and page cache. Memory freed: ${(originalMem - currentMem).toFixed(1)}%`);
+    showToast('메모리 버퍼 캐시가 비워졌습니다. 시스템 리소스가 반환되었습니다.', 'success');
+    btnCache.disabled = false;
+  }, 1200);
+});
+
+btnReport.addEventListener('click', () => {
+  showToast('인스턴스 진단 보고서를 생성하는 중...', 'info');
+  btnReport.disabled = true;
+
+  setTimeout(() => {
+    const reportName = `ec2-report-${Math.floor(100000 + Math.random() * 900000)}.json`;
+    addLog('INFO', 'systemd', `Diagnostic data gathered. Report saved to /var/log/${reportName}`);
+    showToast(`보고서 생성이 완료되었습니다: ${reportName}`, 'success');
+    btnReport.disabled = false;
+  }, 2000);
+});
+
+btnSpike.addEventListener('click', () => {
+  if (isSpikeActive) {
+    showToast('이미 트래픽 스파이크 시뮬레이션이 활성화되어 있습니다.', 'warning');
+    return;
+  }
+
+  isSpikeActive = true;
+  spikeDuration = 0;
+  addLog('WARNING', 'httpd', 'Traffic spike simulation triggered. Rapid increase in incoming requests.');
+  showToast('트래픽 급증 시뮬레이션을 시작합니다. 모니터링 그래프를 확인하세요.', 'warning');
+});
+
+// Notifications Bell mock interaction
+btnNotifications.addEventListener('click', () => {
+  showToast('현재 활성화된 시스템 경고가 없습니다. (상태: 정상)', 'success');
+});
+
+// EC2 Instances operations simulation
+document.querySelectorAll('.btn-stop-inst').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const id = e.target.getAttribute('data-id');
+    const card = document.getElementById(`inst-web-${id}`);
+    const badge = card.querySelector('.status-badge');
+    const stopBtn = card.querySelector('.btn-stop-inst');
+    const startBtn = card.querySelector('.btn-start-inst');
+
+    stopBtn.disabled = true;
+    badge.className = 'status-badge status-stopping';
+    badge.querySelector('.status-text').textContent = 'Stopping';
+    showToast(`web-server-0${id} 인스턴스를 중지하는 중...`, 'info');
+    addLog('WARNING', 'ec2-agent', `Initiated shutdown sequence for web-server-0${id}.`);
+
+    setTimeout(() => {
+      badge.className = 'status-badge status-stopped';
+      badge.querySelector('.status-text').textContent = 'Stopped';
+      stopBtn.style.display = 'none';
+      startBtn.style.display = 'block';
+      startBtn.disabled = false;
+      showToast(`web-server-0${id} 인스턴스가 중지되었습니다.`, 'warning');
+      addLog('INFO', 'ec2-agent', `web-server-0${id} is now stopped.`);
+    }, 2000);
+  });
+});
+
+document.querySelectorAll('.btn-start-inst').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const id = e.target.getAttribute('data-id');
+    const card = document.getElementById(`inst-web-${id}`);
+    const badge = card.querySelector('.status-badge');
+    const stopBtn = card.querySelector('.btn-stop-inst');
+    const startBtn = card.querySelector('.btn-start-inst');
+
+    startBtn.disabled = true;
+    badge.className = 'status-badge status-pending';
+    badge.querySelector('.status-text').textContent = 'Pending';
+    showToast(`web-server-0${id} 인스턴스를 부팅하는 중...`, 'info');
+    addLog('INFO', 'ec2-agent', `Starting instance web-server-0${id}.`);
+
+    setTimeout(() => {
+      badge.className = 'status-badge status-running';
+      badge.querySelector('.status-text').textContent = 'Running';
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
+      stopBtn.disabled = false;
+      showToast(`web-server-0${id} 인스턴스가 구동 중입니다.`, 'success');
+      addLog('INFO', 'ec2-agent', `web-server-0${id} is now running (healthy).`);
+    }, 2000);
+  });
+});
+
+// Settings Form Handlers
+settingsForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  
+  syncIntervalTime = parseInt(inputInterval.value);
+  cpuThreshold = parseFloat(inputCpuThreshold.value);
+  memThreshold = parseFloat(inputMemThreshold.value);
+  enableToasts = inputToastNotif.checked;
+
+  showToast('설정이 성공적으로 저장되었습니다.', 'success');
+  addLog('INFO', 'systemd', `Dashboard settings updated. Sync interval set to ${syncIntervalTime / 1000}s.`);
+
+  // Update Overview Live Sync badge text
+  const liveSyncBadge = document.querySelector('.chart-card .status-badge span');
+  if (liveSyncBadge) {
+    liveSyncBadge.textContent = `Live Sync (${syncIntervalTime / 1000}s)`;
+  }
+
+  // Re-start metric interval
+  startMetricsLoop();
+});
+
+</script>
+</body>
+</html>
